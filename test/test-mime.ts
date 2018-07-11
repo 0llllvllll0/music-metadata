@@ -1,7 +1,7 @@
 import {} from "mocha";
 import {assert} from "chai";
 import * as mime from "mime";
-import * as mm from "../src";
+import * as mm from "../lib";
 import {SourceStream} from "./util";
 import {Promise} from 'es6-promise';
 import * as fs from "fs-extra";
@@ -146,6 +146,10 @@ describe("MIME & extension mapping", () => {
 
     it("should recognize APE", () => {
       return testFileType("MusicBrainz - Beth Hart - Sinner's Prayer.ape", "Monkey's Audio");
+    });
+
+    it.skip("should recognize WavPack", () => {
+      return testFileType("MusicBrainz - Beth Hart - Sinner's Prayer.wv", "WavPack");
     });
 
   });
