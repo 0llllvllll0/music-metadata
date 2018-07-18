@@ -1,7 +1,5 @@
 import {INativeAudioMetadata, IOptions} from "./";
-import * as strtok3 from "strtok3";
-import * as Stream from "stream";
-import * as path from "path";
+import {ITokenizer} from "strtok3";
 import * as fileType from "file-type";
 import * as MimeType from "media-typer";
 import {Promise} from "es6-promise";
@@ -11,58 +9,10 @@ import * as _debug from "debug";
 const debug = _debug("music-metadata:parser:factory");
 
 export interface ITokenParser {
-  parse(tokenizer: strtok3.ITokenizer, options: IOptions): Promise<INativeAudioMetadata>;
+  parse(tokenizer: ITokenizer, options: IOptions): Promise<INativeAudioMetadata>;
 }
 
 export class ParserFactory {
-
-  /**
-   * Extract metadata from the given audio file
-   * @param filePath File path of the audio file to parse
-   * @param opts
-   *   .fileSize=true  Return filesize
-   *   .native=true    Will return original header in result
-   * @returns {Promise<INativeAudioMetadata>}
-   */
-  public static parseFile(filePath: string, opts: IOptions = {}): Promise<INativeAudioMetadata> {
-
-    return strtok3.fromFile(filePath).then(fileTokenizer => {
-      const parserName = ParserFactory.getParserIdForExtension(filePath);
-      if (parserName) {
-        return ParserFactory.loadParser(parserName, opts).then(parser => {
-          return parser.parse(fileTokenizer, opts).then(metadata => {
-            return fileTokenizer.close().then(() => {
-              return metadata;
-            });
-          }).catch(err => {
-            return fileTokenizer.close().then(() => {
-              throw err;
-            });
-          });
-        });
-
-      } else {
-        throw new Error('No parser found for extension: ' + path.extname(filePath));
-      }
-    });
-  }
-
-  /**
-   * Parse metadata from stream
-   * @param stream Node stream
-   * @param mimeType The mime-type, e.g. "audio/mpeg", extension e.g. ".mp3" or filename. This is used to redirect to the correct parser.
-   * @param opts Parsing options
-   * @returns {Promise<INativeAudioMetadata>}
-   */
-  public static parseStream(stream: Stream.Readable, mimeType: string, opts: IOptions = {}): Promise<INativeAudioMetadata> {
-
-    return strtok3.fromStream(stream).then(tokenizer => {
-      if (!tokenizer.fileSize && opts.fileSize) {
-        tokenizer.fileSize = opts.fileSize;
-      }
-      return this.parse(tokenizer, mimeType, opts);
-    });
-  }
 
   /**
    *  Parse metadata from tokenizer
@@ -71,14 +21,28 @@ export class ParserFactory {
    * @param {IOptions} opts
    * @returns {Promise<INativeAudioMetadata>}
    */
-  public static parse(tokenizer: strtok3.ITokenizer, contentType: string, opts: IOptions = {}): Promise<INativeAudioMetadata> {
+  public static parse(tokenizer: ITokenizer, opts: IOptions = {}): Promise<INativeAudioMetadata> {
 
     // Resolve parser based on MIME-type or file extension
-    let parserId = ParserFactory.getParserIdForMimeType(contentType) || ParserFactory.getParserIdForExtension(contentType);
+    let parserId;
+
+    if (opts.contentType) {
+      parserId = ParserFactory.getParserIdForMimeType(opts.contentType) || ParserFactory.getParserIdForExtension(opts.contentType);
+      if (!parserId) {
+        debug("No parser found for MIME-type:" + opts.contentType);
+      }
+    }
+
+    if (!parserId && opts.path) {
+      parserId = ParserFactory.getParserIdForExtension(opts.path);
+      if (!parserId) {
+        debug("No parser found for path:" + opts.path);
+      }
+    }
 
     if (!parserId) {
       // No MIME-type mapping found
-      debug("No parser found for MIME-type / extension:" + contentType);
+      debug("Try to determine type based content...");
 
       const buf = Buffer.alloc(4100);
       return tokenizer.peekBuffer(buf).then(() => {
@@ -108,7 +72,7 @@ export class ParserFactory {
     if (!filePath)
       return;
 
-    const extension = path.extname(filePath).toLocaleLowerCase() || filePath;
+    const extension = filePath.slice((filePath.lastIndexOf(".") - 1 >>> 0) + 1) || filePath;
 
     switch (extension) {
 

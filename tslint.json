@@ -25,7 +25,8 @@
     "ordered-imports": false,
     "forin": false,
     "arrow-parens": [true, "ban-single-arg-parens"],
-    "no-implicit-dependencies": [true, "dev"]
+    "no-implicit-dependencies": [true, "dev"],
+    "no-submodule-imports": [true, "strtok3"]
   },
   "jsRules": {
     /*

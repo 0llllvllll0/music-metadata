@@ -1,7 +1,7 @@
 'use strict';
 
-import {TagPriority, TagType} from './common/GenericTagTypes';
-import {ITokenParser, ParserFactory} from "./ParserFactory";
+import {TagType} from './common/GenericTagTypes';
+import {ITokenParser} from "./ParserFactory";
 import * as Stream from "stream";
 import {IGenericTagMapper} from "./common/GenericTagMapper";
 import {ID3v24TagMapper} from "./id3v2/ID3v24TagMapper";
@@ -13,6 +13,8 @@ import {ID3v1TagMapper} from "./id3v1/ID3v1TagMap";
 import {AsfTagMapper} from "./asf/AsfTagMapper";
 import {RiffInfoTagMapper} from "./riff/RiffInfoTagMap";
 import {Promise} from "es6-promise";
+import * as strtok3 from "strtok3";
+import {MusicMetadataParser} from "./MusicMetadataParser";
 
 /**
  * Attached picture, typically used for cover art
@@ -245,7 +247,16 @@ export interface IAudioMetadata extends INativeAudioMetadata {
 }
 
 export interface IOptions {
+
+  /**
+   * The filename of the audio file
+   */
   path?: string,
+
+  /**
+   * The contentType of the audio data or stream
+   */
+  contentType?: string,
 
   /**
    *  default: `undefined`, pass the
@@ -326,118 +337,6 @@ export class CombinedTagMapper {
   }
 }
 
-export class MusicMetadataParser {
-
-  public static getInstance(): MusicMetadataParser {
-    return new MusicMetadataParser();
-  }
-
-  public static joinArtists(artists: string[]): string {
-    if (artists.length > 2) {
-      return artists.slice(0, artists.length - 1).join(', ') + ' & ' +  artists[artists.length - 1];
-    }
-    return artists.join(' & ');
-  }
-
-  private tagMapper = new CombinedTagMapper();
-
-  /**
-   * Extract metadata from the given audio file
-   * @param filePath File path of the audio file to parse
-   * @param opts
-   *   .filesize=true  Return filesize
-   *   .native=true    Will return original header in result
-   * @returns {Promise<IAudioMetadata>}
-   */
-  public parseFile(filePath: string, opts: IOptions = {}): Promise<IAudioMetadata> {
-
-    return ParserFactory.parseFile(filePath, opts).then(nativeData => {
-      return this.parseNativeTags(nativeData, opts.native, opts.mergeTagHeaders);
-    });
-
-  }
-
-  /**
-   * Extract metadata from the given audio file
-   * @param stream Audio ReadableStream
-   * @param mimeType Mime-Type of Stream
-   * @param opts
-   *   .filesize=true  Return filesize
-   *   .native=true    Will return original header in result
-   * @returns {Promise<IAudioMetadata>}
-   */
-  public parseStream(stream: Stream.Readable, mimeType: string, opts: IOptions = {}): Promise<IAudioMetadata> {
-    return ParserFactory.parseStream(stream, mimeType, opts).then(nativeData => {
-      return this.parseNativeTags(nativeData, opts.native, opts.mergeTagHeaders);
-    });
-  }
-
-  /**
-   * Convert native tags to common tags
-   * @param nativeData
-   * @includeNative return native tags in result
-   * @returns {IAudioMetadata} Native + common tags
-   */
-  public parseNativeTags(nativeData: INativeAudioMetadata, includeNative?: boolean, mergeTagHeaders?: boolean): IAudioMetadata {
-
-    const metadata: IAudioMetadata = {
-      format: nativeData.format,
-      native: includeNative ? nativeData.native : undefined,
-      common: {} as any
-    };
-
-    metadata.format.tagTypes = [];
-
-    for (const tagType in nativeData.native) {
-      metadata.format.tagTypes.push(tagType as TagType);
-    }
-
-    for (const tagType of TagPriority) {
-
-      if (nativeData.native[tagType]) {
-        if (nativeData.native[tagType].length === 0) {
-          // ToDo: register warning: empty tag header
-        } else {
-
-          const common = {
-            track: {no: null, of: null},
-            disk: {no: null, of: null}
-          };
-
-          for (const tag of nativeData.native[tagType]) {
-            this.tagMapper.setGenericTag(common, tagType as TagType, tag);
-          }
-
-          for (const tag of Object.keys(common)) {
-            if (!metadata.common[tag]) {
-              metadata.common[tag] = common[tag];
-            }
-          }
-
-          if (!mergeTagHeaders) {
-            break;
-          }
-        }
-      }
-    }
-
-    if (metadata.common.artists && metadata.common.artists.length > 0) {
-      // common.artists explicitly by meta-data
-      metadata.common.artist = !metadata.common.artist ? MusicMetadataParser.joinArtists(metadata.common.artists) : metadata.common.artist[0];
-    } else {
-      if (metadata.common.artist) {
-        metadata.common.artists = metadata.common.artist as any;
-        if (metadata.common.artist.length > 1) {
-          delete metadata.common.artist;
-        } else {
-          metadata.common.artist = metadata.common.artist[0];
-        }
-      }
-    }
-    return metadata;
-  }
-}
-
 /**
  * Parse audio file
  * @param filePath Media file to read meta-data from
@@ -447,20 +346,34 @@ export class MusicMetadataParser {
  * @returns {Promise<IAudioMetadata>}
  */
 export function parseFile(filePath: string, options?: IOptions): Promise<IAudioMetadata> {
-  return MusicMetadataParser.getInstance().parseFile(filePath, options);
+  options = options ? options : {};
+  return strtok3.fromFile(filePath).then(fileTokenizer => {
+    options.path = filePath || options.path;
+    return new MusicMetadataParser().parse(fileTokenizer, options).then(metadata => {
+      return fileTokenizer.close().then(() => metadata);
+    }).catch(err => {
+      return fileTokenizer.close().then(() => {
+        throw err;
+      });
+    });
+  });
 }
 
 /**
- * Parse audio Stream
- * @param stream
- * @param mimeType
+ * Parse audio from stream
+ * @param stream Node stream
+ * @param mimeType The mime-type, e.g. "audio/mpeg", extension e.g. ".mp3" or filename. This is used to redirect to the correct parser.
  * @param opts Parsing options
  *   .native=true    Will return original header in result
  *   .mergeTagHeaders=false  Populate common from data of all headers available
  * @returns {Promise<IAudioMetadata>}
  */
 export function parseStream(stream: Stream.Readable, mimeType?: string, opts?: IOptions): Promise<IAudioMetadata> {
-  return MusicMetadataParser.getInstance().parseStream(stream, mimeType, opts);
+  opts = opts || {};
+  opts.contentType = mimeType || opts.contentType;
+  return strtok3.fromStream(stream).then(tokenizer => {
+    return new MusicMetadataParser().parse(tokenizer, opts);
+  });
 }
 
 /**

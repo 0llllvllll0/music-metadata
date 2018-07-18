@@ -4,6 +4,7 @@ import {CommonTagMapper} from "../src/common/GenericTagMapper";
 import {commonTags, isSingleton} from "../src/common/GenericTagTypes";
 import * as path from "path";
 import * as mm from "../src";
+import {MusicMetadataParser} from "../src/MusicMetadataParser";
 import * as MimeType from "media-typer";
 
 const t = assert;
@@ -60,9 +61,9 @@ describe("GenericTagMap", () => {
   describe("common.artist / common.artists mapping", () => {
 
     it("should be able to join artists", () => {
-      t.equal(mm.MusicMetadataParser.joinArtists(["David Bowie"]), "David Bowie");
-      t.equal(mm.MusicMetadataParser.joinArtists(["David Bowie", "Stevie Ray Vaughan"]), "David Bowie & Stevie Ray Vaughan");
-      t.equal(mm.MusicMetadataParser.joinArtists(["David Bowie", "Queen", "Mick Ronson"]), "David Bowie, Queen & Mick Ronson");
+      t.equal(MusicMetadataParser.joinArtists(["David Bowie"]), "David Bowie");
+      t.equal(MusicMetadataParser.joinArtists(["David Bowie", "Stevie Ray Vaughan"]), "David Bowie & Stevie Ray Vaughan");
+      t.equal(MusicMetadataParser.joinArtists(["David Bowie", "Queen", "Mick Ronson"]), "David Bowie, Queen & Mick Ronson");
     });
 
     it("parse RIFF tags", () => {
